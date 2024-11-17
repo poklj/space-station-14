@@ -1,4 +1,4 @@
 - type: soundCollection
   id: ZombieOverrun
   files:
-    /Audio/StationEvents/Violet.ogg
+  - /Audio/StationEvents/Violet.ogg

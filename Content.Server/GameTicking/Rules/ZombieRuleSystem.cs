@@ -135,6 +135,11 @@ public sealed class ZombieRuleSystem : GameRuleSystem<ZombieRuleComponent>
                 largestGrid = grid;
             }
         }
+        if (_selectedOverrunSong == String.Empty)
+        {
+            _selectedOverrunSong = _audio.GetSound(zombieRuleComponent.OverrunMusic);
+            _overrunSongLength = (float)_audio.GetAudioLength(_selectedOverrunSong).TotalSeconds;
+        }
 
         if (healthy.Count == 1) // Only one human left. spooky
             _popup.PopupEntity(Loc.GetString("zombie-alone"), healthy[0], healthy[0]);
@@ -155,15 +160,19 @@ public sealed class ZombieRuleSystem : GameRuleSystem<ZombieRuleComponent>
         // if the fraction of zombies is above a lower threshhold (currently 60%) of call percentage (and evac is already called) and the time to escape is within bounds for the music OR the fraction is above 90% of the crew
         // cue in some intense music to convey the gravity of the situation
         if (!zombieRuleComponent.PlayedOverrunMusic)
-            if (GetInfectedFraction(false) >= zombieRuleComponent.ZombieShuttleCallPercentage - 0.10
-                && _alertLevel.GetLevel(largestGrid) == "violet"
-                && _roundEnd.IsRoundEndRequested()
-                && _roundEnd.ShuttleTimeLeft + _roundEnd.ExpectedShuttleLength <= TimeSpan.FromSeconds(_overrunSongLength)
-            || GetInfectedFraction(false) >= zombieRuleComponent.ZombieShuttleCallPercentage)
-            {
-                _sound.PlayGlobalOnStation(uid, _selectedOverrunSong, new AudioParams { Volume = -5f });
-                zombieRuleComponent.PlayedOverrunMusic = true;
-            }
+        {
+            var station = _station.GetOwningStation(largestGrid);
+            if (TryComp(station, out AlertLevelComponent? alertComp) && alertComp != null)
+                if (GetInfectedFraction(false) >= zombieRuleComponent.ZombieShuttleCallPercentage - 0.30
+                    && alertComp.CurrentLevel.Equals("violet")
+                    && _roundEnd.IsRoundEndRequested()
+                    && _roundEnd.ShuttleTimeLeft <= TimeSpan.FromSeconds(_overrunSongLength)
+                    || GetInfectedFraction(false) >= zombieRuleComponent.ZombieShuttleCallPercentage)
+                {
+                    _sound.PlayGlobalOnStation(largestGrid, _selectedOverrunSong, new AudioParams { Volume = -5f });
+                    zombieRuleComponent.PlayedOverrunMusic = true;
+                }
+        }
     }
 
     protected override void Started(EntityUid uid, ZombieRuleComponent component, GameRuleComponent gameRule, GameRuleStartedEvent args)
@@ -171,8 +180,7 @@ public sealed class ZombieRuleSystem : GameRuleSystem<ZombieRuleComponent>
         base.Started(uid, component, gameRule, args);
 
         component.NextRoundEndCheck = _timing.CurTime + component.EndCheckDelay;
-        _selectedOverrunSong = _audio.GetSound(component.OverrunMusic);
-        _overrunSongLength = (float)_audio.GetAudioLength(_selectedOverrunSong).TotalSeconds;
+
     }
 
     protected override void ActiveTick(EntityUid uid, ZombieRuleComponent component, GameRuleComponent gameRule, float frameTime)
