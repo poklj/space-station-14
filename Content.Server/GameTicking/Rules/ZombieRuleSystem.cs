@@ -163,7 +163,7 @@ public sealed class ZombieRuleSystem : GameRuleSystem<ZombieRuleComponent>
         {
             var station = _station.GetOwningStation(largestGrid);
             if (TryComp(station, out AlertLevelComponent? alertComp) && alertComp != null)
-                if (GetInfectedFraction(false) >= zombieRuleComponent.ZombieShuttleCallPercentage - 0.30
+                if (GetInfectedFraction(false) >= zombieRuleComponent.ZombieShuttleCallPercentage - 0.10
                     && alertComp.CurrentLevel.Equals("violet")
                     && _roundEnd.IsRoundEndRequested()
                     && _roundEnd.ShuttleTimeLeft <= TimeSpan.FromSeconds(_overrunSongLength)
