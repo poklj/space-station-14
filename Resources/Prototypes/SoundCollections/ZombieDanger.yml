@@ -1,0 +1,4 @@
+- type: soundCollection
+  id: ZombieOverrun
+  files:
+    /Audio/StationEvents/Violet.ogg

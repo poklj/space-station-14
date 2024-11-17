@@ -25,4 +25,9 @@ public sealed partial class ZombieRuleComponent : Component
     /// </summary>
     [DataField]
     public float ZombieShuttleCallPercentage = 0.7f;
+
+    public bool PlayedOverrunMusic = false;
+
+    [DataField("zombieOverrunMusic")]
+    public SoundSpecifier OverrunMusic = new SoundCollectionSpecifier("ZombieOverrun");
 }

@@ -1,9 +1,12 @@
+using Content.Server.AlertLevel;
 using Content.Server.Antag;
+using Content.Server.Audio;
 using Content.Server.Chat.Systems;
 using Content.Server.GameTicking.Rules.Components;
 using Content.Server.Popups;
 using Content.Server.Roles;
 using Content.Server.RoundEnd;
+using Content.Server.Shuttles.Components;
 using Content.Server.Station.Components;
 using Content.Server.Station.Systems;
 using Content.Server.Zombies;
@@ -15,9 +18,12 @@ using Content.Shared.Mobs.Components;
 using Content.Shared.Mobs.Systems;
 using Content.Shared.Roles;
 using Content.Shared.Zombies;
+using Robust.Shared.Audio;
+using Robust.Shared.Audio.Systems;
 using Robust.Shared.Player;
 using Robust.Shared.Timing;
 using System.Globalization;
+using System.Linq;
 
 namespace Content.Server.GameTicking.Rules;
 
@@ -33,6 +39,12 @@ public sealed class ZombieRuleSystem : GameRuleSystem<ZombieRuleComponent>
     [Dependency] private readonly StationSystem _station = default!;
     [Dependency] private readonly IGameTiming _timing = default!;
     [Dependency] private readonly ZombieSystem _zombie = default!;
+    [Dependency] private readonly ServerGlobalSoundSystem _sound = default!;
+    [Dependency] private readonly SharedAudioSystem _audio = default!;
+    [Dependency] private readonly AlertLevelSystem _alertLevel = default!;
+
+    private float _overrunSongLength;
+    private string _selectedOverrunSong = String.Empty;
 
     public override void Initialize()
     {
@@ -41,6 +53,8 @@ public sealed class ZombieRuleSystem : GameRuleSystem<ZombieRuleComponent>
         SubscribeLocalEvent<InitialInfectedRoleComponent, GetBriefingEvent>(OnGetBriefing);
         SubscribeLocalEvent<ZombieRoleComponent, GetBriefingEvent>(OnGetBriefing);
         SubscribeLocalEvent<IncurableZombieComponent, ZombifySelfActionEvent>(OnZombifySelf);
+
+        
     }
 
     private void OnGetBriefing(Entity<InitialInfectedRoleComponent> role, ref GetBriefingEvent args)
@@ -109,9 +123,19 @@ public sealed class ZombieRuleSystem : GameRuleSystem<ZombieRuleComponent>
     /// <summary>
     ///     The big kahoona function for checking if the round is gonna end
     /// </summary>
-    private void CheckRoundEnd(ZombieRuleComponent zombieRuleComponent)
+    private void CheckRoundEnd(ZombieRuleComponent zombieRuleComponent, EntityUid uid)
     {
         var healthy = GetHealthyHumans();
+
+        var largestGrid = uid;
+        foreach (var station in _station.GetStationsSet())
+        {
+            if(TryComp<StationDataComponent>(station, out var data) && _station.GetLargestGrid(data) is { } grid)
+            {
+                largestGrid = grid;
+            }
+        }
+
         if (healthy.Count == 1) // Only one human left. spooky
             _popup.PopupEntity(Loc.GetString("zombie-alone"), healthy[0], healthy[0]);
 
@@ -123,11 +147,23 @@ public sealed class ZombieRuleSystem : GameRuleSystem<ZombieRuleComponent>
             }
             _roundEnd.RequestRoundEnd(null, false);
         }
-
         // we include dead for this count because we don't want to end the round
         // when everyone gets on the shuttle.
         if (GetInfectedFraction() >= 1) // Oops, all zombies
             _roundEnd.EndRound();
+
+        // if the fraction of zombies is above a lower threshhold (currently 60%) of call percentage (and evac is already called) and the time to escape is within bounds for the music OR the fraction is above 90% of the crew
+        // cue in some intense music to convey the gravity of the situation
+        if (!zombieRuleComponent.PlayedOverrunMusic)
+            if (GetInfectedFraction(false) >= zombieRuleComponent.ZombieShuttleCallPercentage - 0.10
+                && _alertLevel.GetLevel(largestGrid) == "violet"
+                && _roundEnd.IsRoundEndRequested()
+                && _roundEnd.ShuttleTimeLeft + _roundEnd.ExpectedShuttleLength <= TimeSpan.FromSeconds(_overrunSongLength)
+            || GetInfectedFraction(false) >= zombieRuleComponent.ZombieShuttleCallPercentage)
+            {
+                _sound.PlayGlobalOnStation(uid, _selectedOverrunSong, new AudioParams { Volume = -5f });
+                zombieRuleComponent.PlayedOverrunMusic = true;
+            }
     }
 
     protected override void Started(EntityUid uid, ZombieRuleComponent component, GameRuleComponent gameRule, GameRuleStartedEvent args)
@@ -135,6 +171,8 @@ public sealed class ZombieRuleSystem : GameRuleSystem<ZombieRuleComponent>
         base.Started(uid, component, gameRule, args);
 
         component.NextRoundEndCheck = _timing.CurTime + component.EndCheckDelay;
+        _selectedOverrunSong = _audio.GetSound(component.OverrunMusic);
+        _overrunSongLength = (float)_audio.GetAudioLength(_selectedOverrunSong).TotalSeconds;
     }
 
     protected override void ActiveTick(EntityUid uid, ZombieRuleComponent component, GameRuleComponent gameRule, float frameTime)
@@ -142,7 +180,7 @@ public sealed class ZombieRuleSystem : GameRuleSystem<ZombieRuleComponent>
         base.ActiveTick(uid, component, gameRule, frameTime);
         if (!component.NextRoundEndCheck.HasValue || component.NextRoundEndCheck > _timing.CurTime)
             return;
-        CheckRoundEnd(component);
+        CheckRoundEnd(component, uid);
         component.NextRoundEndCheck = _timing.CurTime + component.EndCheckDelay;
     }
 
