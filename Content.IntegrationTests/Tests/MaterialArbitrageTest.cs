@@ -1,10 +1,14 @@
 using System.Collections.Generic;
+using System.Linq;
+using Content.Server.Cargo.Components;
 using Content.Server.Cargo.Systems;
 using Content.Server.Construction.Completions;
 using Content.Server.Construction.Components;
 using Content.Server.Destructible;
 using Content.Server.Destructible.Thresholds.Behaviors;
 using Content.Server.Stack;
+using Content.Server.Store.Systems;
+using Content.Shared.Cargo.Prototypes;
 using Content.Shared.Chemistry.Reagent;
 using Content.Shared.Construction.Components;
 using Content.Shared.Construction.Prototypes;
@@ -14,9 +18,13 @@ using Content.Shared.Lathe;
 using Content.Shared.Materials;
 using Content.Shared.Research.Prototypes;
 using Content.Shared.Stacks;
+using Content.Shared.Storage.Components;
+using Content.Shared.Store;
+using Mono.Cecil.Cil;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
 using Robust.Shared.Prototypes;
+using Robust.Shared.Serialization.Manager;
 using Robust.Shared.Utility;
 
 namespace Content.IntegrationTests.Tests;
@@ -28,6 +36,168 @@ namespace Content.IntegrationTests.Tests;
 [TestFixture]
 public sealed class MaterialArbitrageTest
 {
+    [Test]
+    public async Task makeArbitrage()
+    {
+        await using var pair = await PoolManager.GetServerClient();
+        var server = pair.Server;
+
+        var testMap = await pair.CreateTestMap();
+        await server.WaitIdleAsync();
+
+        var entManager = server.ResolveDependency<IEntityManager>();
+        var mapManager = server.ResolveDependency<IMapManager>();
+        var protoManager = server.ResolveDependency<IPrototypeManager>();
+
+        var pricing = entManager.System<PricingSystem>();
+        var stackSys = entManager.System<StackSystem>();
+        var mapSystem = server.System<SharedMapSystem>();
+        var latheSys = server.System<SharedLatheSystem>();
+        var compFact = server.ResolveDependency<IComponentFactory>();
+
+        var storageFilName = compFact.GetComponentName(typeof(StorageFillComponent));
+        var physicalCompositionName = compFact.GetComponentName(typeof(PhysicalCompositionComponent));
+        var stackComponentName = compFact.GetComponentName(typeof(StackComponent));
+        var staticPriceName = compFact.GetComponentName(typeof(StaticPriceComponent));
+        var materialComponentName = compFact.GetComponentName(typeof(MaterialComponent));
+        Assert.That(mapSystem.IsInitialized(testMap.MapId));
+
+
+        var latheRecipes = latheSys.InverseRecipes;
+        var materialName = compFact.GetComponentName(typeof(MaterialComponent));
+        Dictionary<string, double> priceCache = new();
+        //TODO: Derive the price of a single item in a purchasable stack. x
+        //TODO: Find the lathable recipies that contain the set of items purchasable x
+        //TODO: Figure out if the product of the Lathe recipe is greater than the input amount
+
+        Dictionary<string, Dictionary<string, int>> recepiesMaterials = new(); //id, <mat id, MaterialAmmount>
+        List<string> setMaterialsInRecipes = new();
+        foreach (var val in latheRecipes.Keys)
+        {
+            if (!latheRecipes.TryGetValue(val, out var recipes))
+                continue;
+            foreach (var recipe in recipes)
+            {
+                if(!protoManager.TryIndex(recipe.Result, out var protoIndex))
+                   continue;
+                if(!protoIndex.Components.TryGetComponent(staticPriceName, out _)) // does the resulting recipe even have a price
+                    continue;
+                if(protoIndex.Components.TryGetComponent(materialComponentName, out _)) // is the resulting recipe literally a material?
+                    continue;
+
+                var dict = new Dictionary<string, int>();
+                foreach (var (matId, amount) in recipe.Materials)
+                {
+                    dict.Add(matId, amount);
+                    if(!setMaterialsInRecipes.Contains(matId))
+                        setMaterialsInRecipes.Add(matId);
+                }
+                recepiesMaterials.Add(recipe.ID, dict);
+            }
+        }
+
+        Dictionary<EntProtoId?, Dictionary<string, (int Amount, int Cost)>> PurchasableMaterialsAndPrice = new(); //  productId, <containedId, <amount, priceFor1>>
+        Dictionary<string, int> setMaterialsInPurchasesLowest = new();
+        foreach (var listing in protoManager.EnumeratePrototypes<CargoProductPrototype>())
+        {
+            if (!protoManager.TryIndex(listing.Product.Id, out var listingProduct))
+                continue;
+            if (!listingProduct.Components.TryGetValue(storageFilName, out var storageFillComponent))
+                continue;
+
+            foreach (var entity in ((StorageFillComponent)storageFillComponent.Component).Contents.Where(entity =>
+                     {
+                         if (!protoManager.TryIndex(entity.PrototypeId!, out var item))
+                             return false;
+                         if (!item.Components.TryGetValue(physicalCompositionName,
+                                 out var physCompComponent)) // item isn't a material
+                             return false;
+                         if(entity.SpawnProbability != 1f)
+                             return false;
+                         return ((PhysicalCompositionComponent)physCompComponent.Component)
+                             .MaterialComposition.All(composed => setMaterialsInRecipes.Contains(composed.Key));
+                     }))
+
+            {
+                if (!protoManager.TryIndex(entity.PrototypeId!, out var item))
+                    continue;
+                var cost = 0;
+                if(item.Components.TryGetValue(stackComponentName,out var stackComponent))
+                    cost = ((StackComponent)stackComponent.Component).Count / listing.Cost;
+                else
+                    cost = listing.Cost;
+                if(!item.Components.TryGetValue(physicalCompositionName, out var physCompComponent)) // item isn't a material
+                    continue;
+
+                var dict = new Dictionary<string, (int Amount, int Cost)>();
+
+                foreach (var composed in ((PhysicalCompositionComponent)physCompComponent.Component).MaterialComposition)
+                {
+                    if (PurchasableMaterialsAndPrice.ContainsKey(entity.PrototypeId)
+                        && PurchasableMaterialsAndPrice.TryGetValue(entity.PrototypeId, out var purchasable)
+                        && purchasable.TryGetValue(composed.Key, out var ac)
+                        && cost < ac.Cost)
+                        PurchasableMaterialsAndPrice[entity.PrototypeId][composed.Key] = (composed.Value, cost);
+                    else
+                    {
+                        dict.Add(composed.Key, (composed.Value, cost));
+                    }
+                    if(!setMaterialsInPurchasesLowest.ContainsKey(entity.PrototypeId) && cost < setMaterialsInPurchasesLowest[entity.PrototypeId])
+                        setMaterialsInPurchasesLowest[entity.PrototypeId] = cost;
+                    else
+                        setMaterialsInPurchasesLowest.Add(composed.Key, cost);
+                }
+                PurchasableMaterialsAndPrice.TryAdd(entity.PrototypeId!, dict);
+            }
+        }
+        // Eliminate recipies that don't contain purchasable materials
+        foreach (var matr in recepiesMaterials.Where(matr =>
+                 {
+                     return matr.Value.Any(kvp => !setMaterialsInRecipes.Contains(kvp.Key));
+                 }))
+        {
+            recepiesMaterials.Remove(matr.Key);
+        }
+
+        Assert.Multiple(async () =>
+        {
+            foreach (var purchasable in PurchasableMaterialsAndPrice)
+            {
+                foreach (var material in purchasable.Value)
+                {
+
+                }
+            }
+            foreach (var recipes in recepiesMaterials)
+            {
+                var costForRecipe = 0;
+                var price = await GetPrice(recipes.Key);
+                foreach (var recipe in recipes.Value)
+                {
+
+                    costForRecipe +=
+                }
+            }
+
+        });
+        await server.WaitPost(() => mapManager.DeleteMap(testMap.MapId));
+        await pair.CleanReturnAsync();
+        async Task<double> GetPrice(string id)
+        {
+            if (!priceCache.TryGetValue(id, out var price))
+            {
+                await server.WaitPost(() =>
+                {
+                    var ent = entManager.SpawnEntity(id, testMap.GridCoords);
+                    stackSys.SetCount(ent, 1);
+                    priceCache[id] = price = pricing.GetPrice(ent, false);
+                    entManager.DeleteEntity(ent);
+                });
+            }
+            return price;
+        }
+    }
+
     [Test]
     public async Task NoMaterialArbitrage()
     {
