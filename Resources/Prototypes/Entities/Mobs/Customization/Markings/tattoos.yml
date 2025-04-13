@@ -113,7 +113,7 @@
 - type: marking
   id: TattooEyeRight
   bodyPart: Eyes
-  markingCategory: Head
+  markingCategory: Overlay
   speciesRestriction: [Human, SlimePerson, Reptilian, Dwarf]
   coloring:
     default:
@@ -127,7 +127,7 @@
 - type: marking
   id: TattooEyeLeft
   bodyPart: Eyes
-  markingCategory: Head
+  markingCategory: Overlay
   speciesRestriction: [Human, SlimePerson, Reptilian, Dwarf]
   coloring:
     default:
