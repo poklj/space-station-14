@@ -106,6 +106,7 @@ public abstract class SharedGenpopSystem : EntitySystem
         // my heart yearns for this to be predicted but for some reason opening an entitystorage via
         // verb does not predict it properly.
         _userInterface.TryOpenUi(ent.Owner, GenpopLockerUiKey.Key, user);
+        _userInterface.SetUiState(ent.Owner, GenpopLockerUiKey.Key, new GenpopLockerIdConfigurationState("", 5, Loc.GetString("genpop-prisoner-id-crime-default"), false));
     }
 
     private void OnLockToggleAttempt(Entity<GenpopLockerComponent> ent, ref LockToggleAttemptEvent args)
@@ -212,7 +213,7 @@ public abstract class SharedGenpopSystem : EntitySystem
                     _userInterface.TryOpenUi(ent.Owner, GenpopLockerUiKey.Key, user);
                     if(!IdCard.TryGetIdCard(ent.Comp.LinkedId.Value, out var idCard))
                         return;
-                    _userInterface.SetUiState(ent.Owner, GenpopLockerUiKey.Key, new GenpopLockerIdConfigurationState(idCard.Comp.FullName!, genpopId.SentenceDurationOriginal, genpopId.Crime));
+                    _userInterface.SetUiState(ent.Owner, GenpopLockerUiKey.Key, new GenpopLockerIdConfigurationState(idCard.Comp.FullName!, genpopId.SentenceDurationOriginal, genpopId.Crime, true));
                 },
                 Priority = 10,
                 Text = Loc.GetString("genpop-locker-action-edit"),

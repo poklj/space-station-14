@@ -48,12 +48,14 @@ public sealed class GenpopLockerIdConfigurationState : BoundUserInterfaceState
     public string Name;
     public float Sentence;
     public string Crime;
+    public bool Editing;
 
-    public GenpopLockerIdConfigurationState(string name, float sentence, string crime)
+    public GenpopLockerIdConfigurationState(string name, float sentence, string crime, bool editing)
     {
         Name = name;
         Sentence = sentence;
         Crime = crime;
+        Editing = editing;
     }
 
 }
