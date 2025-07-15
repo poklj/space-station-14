@@ -31,13 +31,31 @@ public sealed class GenpopLockerIdConfiguredMessage : BoundUserInterfaceMessage
     public string Name;
     public float Sentence;
     public string Crime;
+    public bool Editing;
 
-    public GenpopLockerIdConfiguredMessage(string name, float sentence, string crime)
+    public GenpopLockerIdConfiguredMessage(string name, float sentence, string crime, bool editing)
+    {
+        Name = name;
+        Sentence = sentence;
+        Crime = crime;
+        Editing = editing;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class GenpopLockerIdConfigurationState : BoundUserInterfaceState
+{
+    public string Name;
+    public float Sentence;
+    public string Crime;
+
+    public GenpopLockerIdConfigurationState(string name, float sentence, string crime)
     {
         Name = name;
         Sentence = sentence;
         Crime = crime;
     }
+
 }
 
 [Serializable, NetSerializable]

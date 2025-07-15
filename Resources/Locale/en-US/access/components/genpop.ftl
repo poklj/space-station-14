@@ -26,3 +26,4 @@ genpop-locket-ui-button-done = Done
 genpop-locker-action-end-early = End Sentence Early
 genpop-locker-action-clear-id = Clear ID
 genpop-locker-action-reset-sentence = Reset Sentence ({NATURALFIXED($percent, 0)}% served)
+genpop-locker-action-edit = Modify Sentence

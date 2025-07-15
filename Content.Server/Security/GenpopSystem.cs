@@ -26,6 +26,7 @@ public sealed class GenpopSystem : SharedGenpopSystem
         {
             id.Crime = crime;
             id.SentenceDuration = TimeSpan.FromMinutes(sentence);
+            id.SentenceDurationOriginal = sentence;
             Dirty(uid, id);
         }
         if (sentence <= 0)

@@ -14,7 +14,10 @@ public sealed partial class GenpopLockerMenu : FancyWindow
 {
     [Dependency] private readonly IConfigurationManager _cfgManager = default!;
 
-    public event Action<string, float, string>? OnConfigurationComplete;
+    public event Action<string, float, string, bool>? OnConfigurationComplete;
+
+
+    public bool editing = false;
 
     public GenpopLockerMenu(EntityUid owner, IEntityManager entMan)
     {
@@ -42,8 +45,18 @@ public sealed partial class GenpopLockerMenu : FancyWindow
 
         DoneButton.OnPressed += _ =>
         {
-            OnConfigurationComplete?.Invoke(NameEdit.Text, float.Parse(SentenceEdit.Text), CrimeEdit.Text);
+            OnConfigurationComplete?.Invoke(NameEdit.Text, float.Parse(SentenceEdit.Text), CrimeEdit.Text, editing);
         };
+    }
+
+
+    public void UpdateState(GenpopLockerIdConfigurationState state)
+    {
+        NameEdit.Text = state.Name;
+        NameEdit.Editable = false;
+        SentenceEdit.Text = state.Sentence.ToString();
+        CrimeEdit.Text = state.Crime;
+        editing = true;
     }
 
     private void OnTextEdit()

@@ -1,5 +1,6 @@
 using Content.Shared.Access.Components;
 using Content.Shared.Access.Systems;
+using Content.Shared.Administration.Logs;
 using Content.Shared.CCVar;
 using Content.Shared.Database;
 using Content.Shared.Examine;
@@ -25,6 +26,7 @@ public abstract class SharedGenpopSystem : EntitySystem
     [Dependency] protected readonly MetaDataSystem MetaDataSystem = default!;
     [Dependency] private readonly SharedPopupSystem _popup = default!;
     [Dependency] private readonly SharedUserInterfaceSystem _userInterface = default!;
+    [Dependency] private readonly ISharedAdminLogManager _adminLogger = default!;
 
     // CCvar.
     private int _maxIdJobLength;
@@ -44,6 +46,7 @@ public abstract class SharedGenpopSystem : EntitySystem
 
     private void OnIdConfigured(Entity<GenpopLockerComponent> ent, ref GenpopLockerIdConfiguredMessage args)
     {
+
         // validation.
         if (string.IsNullOrWhiteSpace(args.Name) || args.Name.Length > _maxIdJobLength ||
             args.Sentence < 0 ||
@@ -54,15 +57,30 @@ public abstract class SharedGenpopSystem : EntitySystem
 
         if (!_accessReader.IsAllowed(args.Actor, ent))
             return;
+        if (!args.Editing)
+        {
+            // We don't spawn the actual ID now because then the locker would eat it.
+            // Instead, we just fill in the spot temporarily til the checks pass.
+            ent.Comp.LinkedId = EntityUid.Invalid;
 
-        // We don't spawn the actual ID now because then the locker would eat it.
-        // Instead, we just fill in the spot temporarily til the checks pass.
-        ent.Comp.LinkedId = EntityUid.Invalid;
+            _lock.Lock(ent.Owner, null);
+            _entityStorage.CloseStorage(ent);
 
-        _lock.Lock(ent.Owner, null);
-        _entityStorage.CloseStorage(ent);
+            CreateId(ent, args.Name, args.Sentence, args.Crime);
+        }
+        else
+        {
+            if(!TryComp<GenpopIdCardComponent>(ent.Comp.LinkedId!.Value, out var genpopId) || !TryComp<ExpireIdCardComponent>(ent.Comp.LinkedId, out var expire))
+                return;
 
-        CreateId(ent, args.Name, args.Sentence, args.Crime);
+            _adminLogger.Add(LogType.Action, LogImpact.Medium, $"{ToPrettyString(args.Actor):player} Modified genpop id {genpopId}");
+            genpopId.Crime = args.Crime;
+            var newtimespan = TimeSpan.FromSeconds(TimeSpan.FromMinutes(args.Sentence).TotalSeconds - ((expire.ExpireTime - Timing.CurTime).TotalSeconds / genpopId.SentenceDuration.TotalSeconds));
+            genpopId.SentenceDuration = newtimespan;
+            IdCard.SetExpireTime((ent.Comp.LinkedId.Value, expire), newtimespan);
+            genpopId.SentenceDurationOriginal = args.Sentence;
+            Dirty(ent.Comp.LinkedId.Value, genpopId);
+        }
     }
 
     private void OnCloseAttempt(Entity<GenpopLockerComponent> ent, ref StorageCloseAttemptEvent args)
@@ -187,6 +205,22 @@ public abstract class SharedGenpopSystem : EntitySystem
             DoContactInteraction = true,
             Disabled = !hasAccess,
         });
+        args.Verbs.Add(new Verb // Edit Sentence.
+            {
+                Act = () =>
+                {
+                    _userInterface.TryOpenUi(ent.Owner, GenpopLockerUiKey.Key, user);
+                    if(!IdCard.TryGetIdCard(ent.Comp.LinkedId.Value, out var idCard))
+                        return;
+                    _userInterface.SetUiState(ent.Owner, GenpopLockerUiKey.Key, new GenpopLockerIdConfigurationState(idCard.Comp.FullName!, genpopId.SentenceDurationOriginal, genpopId.Crime));
+                },
+                Priority = 10,
+                Text = Loc.GetString("genpop-locker-action-edit"),
+                Impact = LogImpact.Medium,
+                DoContactInteraction = true,
+                Disabled = !hasAccess,
+            }
+        );
     }
 
     private void CancelIdCard(Entity<GenpopLockerComponent> ent, EntityUid? user = null)

@@ -14,15 +14,25 @@ public sealed class GenpopLockerBoundUserInterface(EntityUid owner, Enum uiKey) 
 
         _menu = new(Owner, EntMan);
 
-        _menu.OnConfigurationComplete += (name, time, crime) =>
+        _menu.OnConfigurationComplete += (name, time, crime, editing) =>
         {
-            SendMessage(new GenpopLockerIdConfiguredMessage(name, time, crime));
+            SendMessage(new GenpopLockerIdConfiguredMessage(name, time, crime, editing));
             Close();
         };
 
         _menu.OnClose += Close;
         _menu.OpenCentered();
     }
+
+    protected override void UpdateState(BoundUserInterfaceState state)
+    {
+        base.UpdateState(state);
+        if (state is not GenpopLockerIdConfigurationState current)
+            return;
+
+        _menu?.UpdateState(current);
+    }
+
 
     protected override void Dispose(bool disposing)
     {

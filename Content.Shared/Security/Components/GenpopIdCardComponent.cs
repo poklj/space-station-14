@@ -19,4 +19,7 @@ public sealed partial class GenpopIdCardComponent : Component
     /// </summary>
     [DataField, AutoNetworkedField, AutoPausedField]
     public TimeSpan SentenceDuration;
+
+    [DataField, AutoNetworkedField]
+    public float SentenceDurationOriginal;
 }
