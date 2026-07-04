@@ -1,19 +1,24 @@
-﻿
+﻿using Content.Client.UserInterface.Systems.Hotbar.Widgets;
+using Content.Client.UserInterface.Systems.Storage.Controls;
+using Content.IntegrationTests.NUnit.Constraints;
 using Content.IntegrationTests.Fixtures.Attributes;
-using Content.IntegrationTests.Tests.Changeling.Fixtures;
+using Content.IntegrationTests.Tests.Interaction;
 using Content.Shared.Changeling.Components;
 using Content.Shared.Changeling.Systems;
+using Content.Shared.Input;
 using Content.Shared.Storage;
 using Content.Shared.Storage.EntitySystems;
+using Robust.Client.UserInterface;
+using Robust.Shared.Containers;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Prototypes;
 
 namespace Content.IntegrationTests.Tests.Changeling;
 
-[TestFixture]
 [TestOf(typeof(ChangelingTransformSystem))]
-public sealed class ChangelingSlimeTests : ChangelingTest
+public sealed class ChangelingSlimeTests : InteractionTest
 {
+    protected override string PlayerPrototype => "MobLing";
     private static readonly EntProtoId SlimeHumanoidProtoId = "MobSlimePerson";
     private static readonly EntProtoId AppleProtoId = "FoodApple";
 
@@ -21,28 +26,24 @@ public sealed class ChangelingSlimeTests : ChangelingTest
     [SidedDependency(Side.Server)] private ChangelingTransformSystem _changelingTransform = default!;
     [SidedDependency(Side.Server)] private SharedStorageSystem _sharedStorage = default!;
     [SidedDependency(Side.Server)] private SharedTransformSystem _transform = default!;
-
-    [SetUp]
-    public override async Task Setup()
+    [SidedDependency(Side.Server)] private SharedContainerSystem _container = default!;
+    public override async Task DoSetup()
     {
-        await base.Setup();
+        await base.DoSetup();
 
         // Set up the ling with a Slime present and already consumed.
         var slime = await SpawnTarget(SlimeHumanoidProtoId);
         var slimeEntity = ToServer(slime);
-        var lingIdentityComp = Comp<ChangelingIdentityComponent>(Player);
         await Server.WaitPost(() =>
         {
             // Just give the ling the identity of a slime, no need to mess around with Devouring, that's on the devour test to handle.
-            _changelingIdentity.GrantIdentity((SPlayer, lingIdentityComp),
-                slimeEntity);
-            Assert.That(lingIdentityComp.ConsumedIdentities, Has.Count.EqualTo(2));
+            _changelingIdentity.GrantIdentity(SPlayer, slimeEntity);
         });
     }
 
     [Test]
     [Description(
-        "Test that a Changeling transforming into a ling will gain the approprate storage container and BUI associated with the Species")]
+        "Test that a Changeling transforming into a ling will gain the appropriate storage container and BUI associated with the Species")]
     public async Task TransformIntoSlimeTest()
     {
 
@@ -50,9 +51,8 @@ public sealed class ChangelingSlimeTests : ChangelingTest
             STarget!.Value,
             out var slimeIdentity);
 
-        CUiSys.TryGetInterfaceData(CPlayer, StorageComponent.StorageUiKey.Key, out var beforeBuiData);
-        Assert.That(HasComp<StorageComponent>(Player), Is.False);
-        Assert.That(beforeBuiData, Is.Null);
+        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, StorageComponent.StorageUiKey.Key, out _), Is.False);
+        Assert.That(SPlayer, Has.No.Comp<StorageComponent>(Server));
         await Server.WaitPost(() =>
         {
             _changelingTransform.TransformInto(SPlayer, slimeIdentity!.Identity!.Value);
@@ -61,11 +61,9 @@ public sealed class ChangelingSlimeTests : ChangelingTest
         await AwaitDoAfters();
 
         //Check Storage and BUI Presence
-        Assert.That(HasComp<StorageComponent>(Player), Is.True);
-        CUiSys.TryGetInterfaceData(CPlayer, StorageComponent.StorageUiKey.Key, out var afterBuiStorageData);
-        Assert.That(afterBuiStorageData, Is.Not.Null);
-        CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out var afterBuiTransformData);
-        Assert.That(afterBuiTransformData, Is.Not.Null);
+        Assert.That(SPlayer, Has.Comp<StorageComponent>(Server));
+        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, StorageComponent.StorageUiKey.Key, out _), Is.True );
+        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out _), Is.True);
     }
 
     [Test]
@@ -89,8 +87,7 @@ public sealed class ChangelingSlimeTests : ChangelingTest
         await AwaitDoAfters();
 
         // we can use Changelings BUI as an assertion that we aren't munging the set of BUI's on the player entity
-        CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out var beforeBuiTransformData);
-        Assert.That(beforeBuiTransformData, Is.Not.Null);
+        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out _), Is.True);
 
         // Transform the player back out
         await Server.WaitPost(() =>
@@ -101,10 +98,10 @@ public sealed class ChangelingSlimeTests : ChangelingTest
         await AwaitDoAfters();
 
         // Reassert that BUI's haven't been munged
-        CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out var afterBuiTransformData);
-        Assert.That(afterBuiTransformData, Is.Not.Null);
+        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out _), Is.True);
+
         // And that Storage isn't present
-        Assert.That(HasComp<StorageComponent>(Player), Is.False);
+        Assert.That(SPlayer, Has.No.Comp<StorageComponent>(Server));
     }
 
     [Test]
@@ -123,22 +120,22 @@ public sealed class ChangelingSlimeTests : ChangelingTest
 
         await Server.WaitPost(() =>
         {
-            _changelingIdentity.GrantIdentity((SPlayer, lingIdentityComp),
-                secondSlimeEntity);
+            _changelingIdentity.GrantIdentity(SPlayer, secondSlimeEntity);
             Assert.That(lingIdentityComp.ConsumedIdentities, Has.Count.EqualTo(3));
             //just quickly pop into the slime identity
             _changelingTransform.TransformInto(SPlayer, slimeIdentity1!.Identity!.Value);
         });
+
 
         await AwaitDoAfters();
         _changelingIdentity.TryGetDataFromOriginal(SPlayer,
             secondSlimeEntity,
             out var slimeIdentity2);
 
-        Assert.That(HasComp<StorageComponent>(Player), Is.True);
+        Assert.That(SPlayer, Has.Comp<StorageComponent>(Server));
         //Spawn a Test Apple in the players hand
-        await PlaceInHands(AppleProtoId);
-
+        var apple = await PlaceInHands(AppleProtoId);
+        var appleEnt = ToServer(apple);
         //Now stick it into our storage
         var storageComponent = Comp<StorageComponent>(Player);
         await Server.WaitPost(() =>
@@ -146,7 +143,7 @@ public sealed class ChangelingSlimeTests : ChangelingTest
             _sharedStorage.PlayerInsertHeldEntity(SPlayer, SPlayer);
         });
         Assert.That(storageComponent.StoredItems, Has.Count.EqualTo(1));
-
+        storageComponent.StoredItems.TryGetValue(appleEnt, out var appleStoredLocation);
 
         //transform into the second slime we added earlier
         await Server.WaitPost(() =>
@@ -155,7 +152,24 @@ public sealed class ChangelingSlimeTests : ChangelingTest
         });
         await AwaitDoAfters();
 
+        //Check that it's the same component from earlier and that the apple is in the same container
+        Assert.That(Comp<StorageComponent>(Player), Is.EqualTo(storageComponent));
+        Assert.That(storageComponent.StoredItems, Is.Not.Null);
         Assert.That(storageComponent.StoredItems, Has.Count.EqualTo(1));
+
+        _container.TryGetContainingContainer(appleEnt, out var container);
+        Assert.That(container, Is.EqualTo(storageComponent.Container));
+        storageComponent.StoredItems.TryGetValue(appleEnt, out var postTransformStoredLocation);
+        Assert.That(appleStoredLocation, Is.EqualTo(postTransformStoredLocation));
+
+        //Actually pull the apple from the inventory
+        await Activate(Player);
+        Assert.That(IsUiOpen(StorageComponent.StorageUiKey.Key), Is.True);
+        var ctrl = GetStorageControl(apple);
+        await ClickControl(ctrl, ContentKeyFunctions.MoveStoredItem);
+        Assert.That(_container.TryGetContainingContainer(appleEnt, out container));
+        Assert.That(container!.Owner, Is.EqualTo(SPlayer));
+
     }
 
     [Test]
@@ -197,13 +211,20 @@ public sealed class ChangelingSlimeTests : ChangelingTest
 
         //Assert that the storage container has been properly removed from the player,
         //items have been dumped and the lifestage for the StorageComponent has become Deleted
-        Assert.That(HasComp<StorageComponent>(Player), Is.False);
+        Assert.That(SPlayer, Has.No.Comp<StorageComponent>(Server));
         Assert.That(storageComponent.StoredItems, Has.Count.EqualTo(0));
         Assert.That(storageComponent.LifeStage, Is.EqualTo(ComponentLifeStage.Deleted));
 
         // Is the apple still alive?
-        AssertExists(apple);
+        Assert.That(_container.TryGetContainingContainer(appleEnt, out _), Is.False);
         Assert.That(_transform.InRange(SPlayer,appleEnt, 1), Is.True);
-        Assert.That(_transform.GetParent(appleEnt), Is.Not.EqualTo(transformComponent));
+    }
+
+    private ItemGridPiece GetStorageControl(NetEntity target)
+    {
+        var uid = ToClient(target);
+        var hotbar = GetWidget<HotbarGui>();
+        var storageContainer  = GetControlFromField<Control>(nameof(HotbarGui.SingleStorageContainer), hotbar);
+        return GetControlFromChildren<ItemGridPiece>(c => c.Entity == uid, storageContainer);
     }
 }
