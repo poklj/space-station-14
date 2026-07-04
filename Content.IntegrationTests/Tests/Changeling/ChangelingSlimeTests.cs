@@ -15,6 +15,7 @@ namespace Content.IntegrationTests.Tests.Changeling;
 public sealed class ChangelingSlimeTests : ChangelingTest
 {
     private static readonly EntProtoId SlimeHumanoidProtoId = "MobSlimePerson";
+    private static readonly EntProtoId AppleProtoId = "FoodApple";
 
     [SidedDependency(Side.Server)] private SharedChangelingIdentitySystem _changelingIdentity = default!;
     [SidedDependency(Side.Server)] private ChangelingTransformSystem _changelingTransform = default!;
@@ -137,7 +138,7 @@ public sealed class ChangelingSlimeTests : ChangelingTest
 
         Assert.That(HasComp<StorageComponent>(Player), Is.True);
         //Spawn a Test Apple in the players hand
-        await PlaceInHands("FoodApple");
+        await PlaceInHands(AppleProtoId);
 
         //Now stick it into our storage
         var storageComponent = Comp<StorageComponent>(Player);
@@ -172,7 +173,7 @@ public sealed class ChangelingSlimeTests : ChangelingTest
             SPlayer,
             out var humanIdentity);
 
-        var apple = await PlaceInHands("FoodApple");
+        var apple = await PlaceInHands(AppleProtoId);
         var appleEnt = ToServer(apple);
 
         await Server.WaitPost(() =>
