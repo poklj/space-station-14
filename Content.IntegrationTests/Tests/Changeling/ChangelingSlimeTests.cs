@@ -123,7 +123,6 @@ public sealed class ChangelingSlimeTests : ChangelingTest
 
         await Server.WaitPost(() =>
         {
-            // Just give the ling the identity of a slime, no need to mess around with Devouring, that's on the devour test to handle.
             _changelingIdentity.GrantIdentity((SPlayer, lingIdentityComp),
                 secondSlimeEntity);
             Assert.That(lingIdentityComp.ConsumedIdentities, Has.Count.EqualTo(3));
