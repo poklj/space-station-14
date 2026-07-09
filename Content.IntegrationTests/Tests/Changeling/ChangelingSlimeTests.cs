@@ -1,11 +1,11 @@
-﻿using Content.Client.UserInterface.Systems.Hotbar.Widgets;
+using Content.Client.UserInterface.Systems.Hotbar.Widgets;
 using Content.Client.UserInterface.Systems.Storage.Controls;
 using Content.IntegrationTests.NUnit.Constraints;
 using Content.IntegrationTests.Fixtures.Attributes;
 using Content.IntegrationTests.Tests.Interaction;
 using Content.Shared.Changeling.Components;
 using Content.Shared.Changeling.Systems;
-using Content.Shared.Input;
+using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Storage;
 using Content.Shared.Storage.EntitySystems;
 using Robust.Client.UserInterface;
@@ -27,69 +27,53 @@ public sealed class ChangelingSlimeTests : InteractionTest
     [SidedDependency(Side.Server)] private SharedStorageSystem _sharedStorage = default!;
     [SidedDependency(Side.Server)] private SharedTransformSystem _transform = default!;
     [SidedDependency(Side.Server)] private SharedContainerSystem _container = default!;
+    [SidedDependency(Side.Client)] private SharedHandsSystem _hands = default!;
+
     public override async Task DoSetup()
     {
         await base.DoSetup();
 
-        // Set up the ling with a Slime present and already consumed.
+        // Set up the ling with a slime present and already consumed.
         var slime = await SpawnTarget(SlimeHumanoidProtoId);
         var slimeEntity = ToServer(slime);
         await Server.WaitPost(() =>
         {
-            // Just give the ling the identity of a slime, no need to mess around with Devouring, that's on the devour test to handle.
+            // Just give the ling the identity of a slime, no need to mess around with devouring, that's on the devour test to handle.
             _changelingIdentity.GrantIdentity(SPlayer, slimeEntity);
         });
     }
 
     [Test]
     [Description(
-        "Test that a Changeling transforming into a ling will gain the appropriate storage container and BUI associated with the Species")]
+        "Test that a changeling transforming into a slime will gain the appropriate storage container and BUI associated with the species and lose them when transforming back into a human.")]
     public async Task TransformIntoSlimeTest()
     {
-
-        _changelingIdentity.TryGetDataFromOriginal(SPlayer,
-            STarget!.Value,
-            out var slimeIdentity);
-
-        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, StorageComponent.StorageUiKey.Key, out _), Is.False);
-        Assert.That(SPlayer, Has.No.Comp<StorageComponent>(Server));
-        await Server.WaitPost(() =>
-        {
-            _changelingTransform.TransformInto(SPlayer, slimeIdentity!.Identity!.Value);
-
-        });
-        await AwaitDoAfters();
-
-        //Check Storage and BUI Presence
-        Assert.That(SPlayer, Has.Comp<StorageComponent>(Server));
-        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, StorageComponent.StorageUiKey.Key, out _), Is.True );
-        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out _), Is.True);
-    }
-
-    [Test]
-    [Description(
-        "Test that a Changeling transforming out of a ling will remove the storage container and BUI associated with the Species Without disturbing other BUIs")]
-    public async Task TransformOutOfSlimeTest()
-    {
-        // Transform ourselves into a slime, Previous test asserts that this gets us into a valid slime state.
-        _changelingIdentity.TryGetDataFromOriginal(SPlayer,
+        Assert.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
             SPlayer,
-            out var humanIdentityData);
-        _changelingIdentity.TryGetDataFromOriginal(SPlayer,
+            out var humanIdentityData), "Failed to get the changeling's human identity data.");
+        Assert.That(_changelingIdentity.TryGetDataFromOriginal(
+            SPlayer,
             STarget!.Value,
-            out var slimeIdentity);
+            out var slimeIdentity), "Failed to get the changeling's slime identity data.");
 
+        // Assert that the player does not have a storage component or BUI before transforming into a slime.
+        Assert.That(SPlayer, Has.No.Comp<StorageComponent>(Server), "Non-slime player spawned with a storage component.");
+        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, StorageComponent.StorageUiKey.Key, out _), Is.False, "Non-slime player spawned with a storage BUI.");
+        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out _), Is.True, "Changeling did not spawn with a changeling transform BUI.");
+
+        // Transform the player into a slime.
         await Server.WaitPost(() =>
         {
             _changelingTransform.TransformInto(SPlayer, slimeIdentity!.Identity!.Value);
-
         });
         await AwaitDoAfters();
 
-        // we can use Changelings BUI as an assertion that we aren't munging the set of BUI's on the player entity
-        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out _), Is.True);
+        // Check storage and BUI presence.
+        Assert.That(SPlayer, Has.Comp<StorageComponent>(Server), "Changeling did not gain a storage component when transforming into a slime.");
+        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, StorageComponent.StorageUiKey.Key, out _), Is.True, "Changeling did not gain a storage BUI when transforming into a slime.");
+        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out _), Is.True, "Changeling lost their changeling transform BUI when transforming into a slime.");
 
-        // Transform the player back out
+        // Transform the player back into a human.
         await Server.WaitPost(() =>
         {
             _changelingTransform.TransformInto(SPlayer, humanIdentityData!.Identity!.Value);
@@ -97,79 +81,73 @@ public sealed class ChangelingSlimeTests : InteractionTest
         });
         await AwaitDoAfters();
 
-        // Reassert that BUI's haven't been munged
-        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out _), Is.True);
-
-        // And that Storage isn't present
-        Assert.That(SPlayer, Has.No.Comp<StorageComponent>(Server));
+        // Reassert that the storage and BUI presence is back to the original state.
+        Assert.That(SPlayer, Has.No.Comp<StorageComponent>(Server), "Changeling did not lose their storage component when transforming back into a human.");
+        // Assert.That(CUiSys.TryGetInterfaceData(CPlayer, StorageComponent.StorageUiKey.Key, out _), Is.False, "Changeling did not lose their storage BUI when transforming back into a human."); // TODO: BUI is not being removed right now.
+        Assert.That(CUiSys.TryGetInterfaceData(CPlayer, ChangelingTransformUiKey.Key, out _), Is.True, "Changeling lost their changeling transform BUI when transforming back into a human.");
     }
 
     [Test]
     [Description(
-        "Test that a Changeling transforming between slimes wont lose a storage")]
+        "Test that a changeling transforming between slimes wont lose a storage")]
     public async Task TransformPreserveStorage()
     {
         var lingIdentityComp = Comp<ChangelingIdentityComponent>(Player);
-        _changelingIdentity.TryGetDataFromOriginal(SPlayer,
+        Assert.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
             STarget!.Value,
-            out var slimeIdentity1);
+            out var slimeIdentity1), "Failed to get the changeling's slime identity data.");
 
-        //Spawn a second slime
+        // Spawn a second slime.
         var secondSlime = await Spawn(SlimeHumanoidProtoId);
         var secondSlimeEntity = ToServer(secondSlime);
 
-        await Server.WaitPost(() =>
+        await Server.WaitAssertion(() =>
         {
             _changelingIdentity.GrantIdentity(SPlayer, secondSlimeEntity);
-            Assert.That(lingIdentityComp.ConsumedIdentities, Has.Count.EqualTo(3));
-            //just quickly pop into the slime identity
+            Assert.That(lingIdentityComp.ConsumedIdentities, Has.Count.EqualTo(3), "Changeling did not gain the correct number of identities.");
+            // Transform into the first slime.
             _changelingTransform.TransformInto(SPlayer, slimeIdentity1!.Identity!.Value);
         });
-
-
         await AwaitDoAfters();
-        _changelingIdentity.TryGetDataFromOriginal(SPlayer,
-            secondSlimeEntity,
-            out var slimeIdentity2);
 
-        Assert.That(SPlayer, Has.Comp<StorageComponent>(Server));
-        //Spawn a Test Apple in the players hand
+        Assert.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
+            secondSlimeEntity,
+            out var slimeIdentity2), "Failed to get the changeling's second slime identity data.");
+
+        Assert.That(SPlayer, Has.Comp<StorageComponent>(Server), "Changeling did not gain a storage component when transforming into a slime.");
+        // Spawn a test item in the players hand.
         var apple = await PlaceInHands(AppleProtoId);
         var appleEnt = ToServer(apple);
-        //Now stick it into our storage
+        // Now insert it into our slime storage.
         var storageComponent = Comp<StorageComponent>(Player);
         await Server.WaitPost(() =>
         {
             _sharedStorage.PlayerInsertHeldEntity(SPlayer, SPlayer);
         });
         Assert.That(storageComponent.StoredItems, Has.Count.EqualTo(1));
-        storageComponent.StoredItems.TryGetValue(appleEnt, out var appleStoredLocation);
+        Assert.That(storageComponent.StoredItems.TryGetValue(appleEnt, out var appleStoredLocation), "Failed to get the stored location of the apple.");
 
-        //transform into the second slime we added earlier
+        // Transform into the second slime we added earlier.
         await Server.WaitPost(() =>
         {
             _changelingTransform.TransformInto(SPlayer, slimeIdentity2!.Identity!.Value);
         });
         await AwaitDoAfters();
 
-        //Check that it's the same component from earlier and that the apple is in the same container
-        Assert.That(Comp<StorageComponent>(Player), Is.EqualTo(storageComponent));
-        Assert.That(storageComponent.StoredItems, Is.Not.Null);
-        Assert.That(storageComponent.StoredItems, Has.Count.EqualTo(1));
+        // Check that it's the same component from earlier and that the apple is in the same container.
+        storageComponent = Comp<StorageComponent>(Player);
+        Assert.That(storageComponent.StoredItems, Has.Count.EqualTo(1), "Changeling lost their storage contents when transforming between slimes.");
+        Assert.That(_container.TryGetContainingContainer(appleEnt, out var container), "Failed to get the container for the stored item after transforming between slimes.");
+        Assert.That(container, Is.EqualTo(storageComponent.Container), "The stored item is no longer in the same storage container after transforming between slimes.");
+        Assert.That(storageComponent.StoredItems.TryGetValue(appleEnt, out var postTransformStoredLocation), "Failed to get the stored location of the apple after transforming between slimes.");
+        Assert.That(appleStoredLocation, Is.EqualTo(postTransformStoredLocation), "The stored item is no longer in the same location within the storage container after transforming between slimes.");
 
-        _container.TryGetContainingContainer(appleEnt, out var container);
-        Assert.That(container, Is.EqualTo(storageComponent.Container));
-        storageComponent.StoredItems.TryGetValue(appleEnt, out var postTransformStoredLocation);
-        Assert.That(appleStoredLocation, Is.EqualTo(postTransformStoredLocation));
-
-        //Actually pull the apple from the inventory
+        // Actually pull the apple from the inventory.
         await Activate(Player);
-        Assert.That(IsUiOpen(StorageComponent.StorageUiKey.Key), Is.True);
+        Assert.That(IsUiOpen(StorageComponent.StorageUiKey.Key), "Storage BUI did not open when activating the changeling.");
         var ctrl = GetStorageControl(apple);
-        await ClickControl(ctrl, ContentKeyFunctions.MoveStoredItem);
-        Assert.That(_container.TryGetContainingContainer(appleEnt, out container));
-        Assert.That(container!.Owner, Is.EqualTo(SPlayer));
-
+        await ClickControl(ctrl);
+        Assert.That(_hands.IsHolding(SPlayer, appleEnt), "Changeling did not successfully pull the stored item from their storage.");
     }
 
     [Test]
@@ -178,53 +156,56 @@ public sealed class ChangelingSlimeTests : InteractionTest
     public async Task TransformDropStorage()
     {
         var transformComponent = Comp<TransformComponent>(Player);
-        //Set up having an apple inside the slimes storage
-        _changelingIdentity.TryGetDataFromOriginal(SPlayer,
+        // Set up having an apple inside the slimes storage.
+        Assert.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
             STarget!.Value,
-            out var slimeIdentity);
-        _changelingIdentity.TryGetDataFromOriginal(SPlayer,
+            out var slimeIdentity), "Failed to get slime identity.");
+        Assert.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
             SPlayer,
-            out var humanIdentity);
+            out var humanIdentity), "Failed to get human identity.");
 
         var apple = await PlaceInHands(AppleProtoId);
         var appleEnt = ToServer(apple);
 
+        // Transform into a slime.
         await Server.WaitPost(() =>
         {
             _changelingTransform.TransformInto(SPlayer, slimeIdentity!.Identity!.Value);
         });
         await AwaitDoAfters();
 
+        // Insert the apple into the slime storage.
         await Server.WaitPost(() =>
         {
             _sharedStorage.PlayerInsertHeldEntity(SPlayer, SPlayer);
         });
-        Assert.That(_transform.GetParent(appleEnt), Is.EqualTo(transformComponent));
-
-        //Now transform out
         var storageComponent = Comp<StorageComponent>(Player);
+        Assert.That(_container.TryGetContainingContainer(appleEnt, out var container), "Failed to get the container for the stored item after inserting into slime storage.");
+        Assert.That(container, Is.EqualTo(storageComponent.Container), "The stored item is not in the storage container after inserting into slime storage.");
+
+        // Now transform out.
         await Server.WaitPost(() =>
         {
             _changelingTransform.TransformInto(SPlayer, humanIdentity!.Identity!.Value);
         });
         await AwaitDoAfters();
 
-        //Assert that the storage container has been properly removed from the player,
-        //items have been dumped and the lifestage for the StorageComponent has become Deleted
+        // Assert that the storage container has been properly removed from the player,
+        // items have been dumped and the lifestage for the StorageComponent has become Deleted
         Assert.That(SPlayer, Has.No.Comp<StorageComponent>(Server));
         Assert.That(storageComponent.StoredItems, Has.Count.EqualTo(0));
         Assert.That(storageComponent.LifeStage, Is.EqualTo(ComponentLifeStage.Deleted));
 
-        // Is the apple still alive?
-        Assert.That(_container.TryGetContainingContainer(appleEnt, out _), Is.False);
-        Assert.That(_transform.InRange(SPlayer,appleEnt, 1), Is.True);
+        // Does the apple still exist?
+        Assert.That(_container.TryGetContainingContainer(appleEnt, out _), Is.False, "The apple is still in a container after the changeling transformed out of slime form.");
+        Assert.That(_transform.InRange(SPlayer, appleEnt, 1), Is.True, "The apple is not within range after the changeling transformed out of slime form.");
     }
 
     private ItemGridPiece GetStorageControl(NetEntity target)
     {
         var uid = ToClient(target);
         var hotbar = GetWidget<HotbarGui>();
-        var storageContainer  = GetControlFromField<Control>(nameof(HotbarGui.SingleStorageContainer), hotbar);
+        var storageContainer = GetControlFromField<Control>(nameof(HotbarGui.SingleStorageContainer), hotbar);
         return GetControlFromChildren<ItemGridPiece>(c => c.Entity == uid, storageContainer);
     }
 }

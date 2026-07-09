@@ -224,8 +224,6 @@ public abstract partial class SharedChangelingIdentitySystem : EntitySystem
         return clone;
     }
 
-
-
     /// <summary>
     /// Marks that the changeling has successfully devoured the target.
     /// </summary>
