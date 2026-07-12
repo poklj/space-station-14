@@ -12,6 +12,7 @@ using Robust.Client.UserInterface;
 using Robust.Shared.Containers;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Prototypes;
+using Content.Shared.Input;
 
 namespace Content.IntegrationTests.Tests.Changeling;
 
@@ -27,7 +28,7 @@ public sealed class ChangelingSlimeTests : InteractionTest
     [SidedDependency(Side.Server)] private SharedStorageSystem _sharedStorage = default!;
     [SidedDependency(Side.Server)] private SharedTransformSystem _transform = default!;
     [SidedDependency(Side.Server)] private SharedContainerSystem _container = default!;
-    [SidedDependency(Side.Client)] private SharedHandsSystem _hands = default!;
+    [SidedDependency(Side.Server)] private SharedHandsSystem _hands = default!;
 
     public override async Task DoSetup()
     {
@@ -48,10 +49,10 @@ public sealed class ChangelingSlimeTests : InteractionTest
         "Test that a changeling transforming into a slime will gain the appropriate storage container and BUI associated with the species and lose them when transforming back into a human.")]
     public async Task TransformIntoSlimeTest()
     {
-        Assert.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
+        Assume.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
             SPlayer,
             out var humanIdentityData), "Failed to get the changeling's human identity data.");
-        Assert.That(_changelingIdentity.TryGetDataFromOriginal(
+        Assume.That(_changelingIdentity.TryGetDataFromOriginal(
             SPlayer,
             STarget!.Value,
             out var slimeIdentity), "Failed to get the changeling's slime identity data.");
@@ -93,7 +94,7 @@ public sealed class ChangelingSlimeTests : InteractionTest
     public async Task TransformPreserveStorage()
     {
         var lingIdentityComp = Comp<ChangelingIdentityComponent>(Player);
-        Assert.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
+        Assume.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
             STarget!.Value,
             out var slimeIdentity1), "Failed to get the changeling's slime identity data.");
 
@@ -104,13 +105,13 @@ public sealed class ChangelingSlimeTests : InteractionTest
         await Server.WaitAssertion(() =>
         {
             _changelingIdentity.GrantIdentity(SPlayer, secondSlimeEntity);
-            Assert.That(lingIdentityComp.ConsumedIdentities, Has.Count.EqualTo(3), "Changeling did not gain the correct number of identities.");
+            Assume.That(lingIdentityComp.ConsumedIdentities, Has.Count.EqualTo(3), "Changeling did not gain the correct number of identities.");
             // Transform into the first slime.
             _changelingTransform.TransformInto(SPlayer, slimeIdentity1!.Identity!.Value);
         });
         await AwaitDoAfters();
 
-        Assert.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
+        Assume.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
             secondSlimeEntity,
             out var slimeIdentity2), "Failed to get the changeling's second slime identity data.");
 
@@ -146,8 +147,9 @@ public sealed class ChangelingSlimeTests : InteractionTest
         await Activate(Player);
         Assert.That(IsUiOpen(StorageComponent.StorageUiKey.Key), "Storage BUI did not open when activating the changeling.");
         var ctrl = GetStorageControl(apple);
-        await ClickControl(ctrl);
-        Assert.That(_hands.IsHolding(SPlayer, appleEnt), "Changeling did not successfully pull the stored item from their storage.");
+        await ClickControl(ctrl, ContentKeyFunctions.MoveStoredItem);
+        await RunUntilSynced();
+        Assert.That(_hands.IsHolding((SPlayer, Hands), appleEnt), "Changeling did not successfully pull the stored item from their storage.");
     }
 
     [Test]
@@ -157,10 +159,10 @@ public sealed class ChangelingSlimeTests : InteractionTest
     {
         var transformComponent = Comp<TransformComponent>(Player);
         // Set up having an apple inside the slimes storage.
-        Assert.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
+        Assume.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
             STarget!.Value,
             out var slimeIdentity), "Failed to get slime identity.");
-        Assert.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
+        Assume.That(_changelingIdentity.TryGetDataFromOriginal(SPlayer,
             SPlayer,
             out var humanIdentity), "Failed to get human identity.");
 

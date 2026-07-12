@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Content.Shared.Changeling.Components;
 using Content.Shared.Cloning;
@@ -199,9 +199,8 @@ public abstract partial class SharedChangelingIdentitySystem : EntitySystem
     public EntityUid? GrantIdentity(Entity<ChangelingIdentityComponent?> ent, EntityUid target)
     {
         if (!Resolve(ent.Owner, ref ent.Comp))
-        {
             return null;
-        }
+
         var clone = CloneToPausedMap(ent.Comp.IdentityCloningSettings, target);
 
         if (clone == null)
@@ -216,7 +215,7 @@ public abstract partial class SharedChangelingIdentitySystem : EntitySystem
         }
 
         UpdateIdentityData(newIdentity, clone.Value, target);
-        AddDevouredReference((ent.Owner, ent.Comp), target);
+        AddDevouredReference(ent!, target);
 
         HandlePvsOverride(ent, clone.Value);
         Dirty(ent);
